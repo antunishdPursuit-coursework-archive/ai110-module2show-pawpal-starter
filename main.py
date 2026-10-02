@@ -78,9 +78,7 @@ dog.add_task(bath_dog)
 cat.add_task(medicine_cat)
 
 # --- Collect all due tasks across all pets ---
-all_due = []
-for pet in owner.pets:
-    all_due.extend(pet.get_due_tasks_today())
+all_due = Scheduler.get_daily_tasks(owner)
 
 # ── Conflict Detection ────────────────────────────────────────────────────
 print("=" * 45)
@@ -126,27 +124,25 @@ for t in cat.get_tasks():
     due = str(t.schedule.next_due_date) if t.schedule else "N/A"
     print(f"  {t.title} | due: {due} | status: {t.status}")
 
-print("\nAll pending tasks (any pet):")
-all_due = []
-for pet in owner.pets:
-    all_due.extend(pet.get_due_tasks_today())
+print("\nToday's pending tasks (any pet):")
+all_due = Scheduler.get_daily_tasks(owner, include_completed=True)
 pending = Scheduler.filter_tasks(all_due, status="pending")
 for t in Scheduler.sort_by_time(pending):
     print(f"  {t.time_of_day}  {t.title} [{t.status}]")
 
-print("\nAll done tasks (any pet):")
+print("\nToday's done tasks (any pet):")
 done = Scheduler.filter_tasks(all_due, status="done")
 for t in done:
     print(f"  {t.time_of_day}  {t.title} [{t.status}]")
 
 # ── Demo 3: filter by pet name ────────────────────────────────────────────
-print("\nOnly Luna's tasks:")
+print("\nOnly Luna's tasks today:")
 luna_tasks = Scheduler.filter_tasks(all_due, pet_name="Luna", pets=owner.pets)
 for t in Scheduler.sort_by_time(luna_tasks):
     d = t.to_display_dict()
     print(f"  {d['time_of_day']}  {d['title']} [{d['status']}]")
 
-print("\nOnly Rex's pending tasks:")
+print("\nOnly Rex's pending tasks today:")
 rex_pending = Scheduler.filter_tasks(all_due, status="pending", pet_name="Rex", pets=owner.pets)
 for t in Scheduler.sort_by_time(rex_pending):
     d = t.to_display_dict()

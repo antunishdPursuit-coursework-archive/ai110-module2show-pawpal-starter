@@ -15,8 +15,14 @@ st.subheader("Owner")
 owner_name = st.text_input("Your name", value="Jordan")
 
 if st.button("Set Owner"):
-    st.session_state.owner = Owner(owner_name)
-    st.success(f"Owner set: {owner_name}")
+    if not owner_name.strip():
+        st.error("Enter an owner name.")
+    else:
+        if st.session_state.owner is None:
+            st.session_state.owner = Owner(owner_name.strip())
+        else:
+            st.session_state.owner.name = owner_name.strip()
+        st.success(f"Owner set: {owner_name.strip()}")
 
 if st.session_state.owner is None:
     st.info("Set an owner above to get started.")
@@ -48,6 +54,9 @@ with col_forms:
     if st.button("Add Pet"):
         new_pet = Pet(name=pet_name, species=species, age=age)
         try:
+            if not pet_name.strip():
+                raise ValueError("Enter a pet name.")
+            new_pet.name = pet_name.strip()
             owner.add_pet(new_pet)
             st.success(f"Added {pet_name} the {species}!")
         except ValueError as e:
@@ -92,6 +101,9 @@ with col_forms:
                 time_of_day=time_of_day,
             )
             try:
+                if not task_title.strip():
+                    raise ValueError("Enter a task title.")
+                new_task.title = task_title.strip()
                 selected_pet.add_task(new_task)
                 st.success(f"Task '{task_title}' added to {selected_pet.name}!")
             except ValueError as e:
@@ -103,20 +115,19 @@ with col_forms:
 with col_schedule:
     st.subheader("Today's Schedule")
 
-    all_due = []
-    for pet in owner.pets:
-        all_due.extend(pet.get_due_tasks_today())
+    all_due = Scheduler.get_daily_tasks(owner, include_completed=True)
+    unfinished = [task for task in all_due if task.status != "done"]
 
     if not all_due:
         st.info("No tasks due today. Add tasks on the left to build your pet's routine.")
     else:
         # ── Conflict warnings ──
-        conflicts = Scheduler.detect_conflicts(all_due, pets=owner.pets)
+        conflicts = Scheduler.detect_conflicts(unfinished, pets=owner.pets)
         if conflicts:
             st.error(
                 f"**Scheduling conflict{'s' if len(conflicts) > 1 else ''} detected — action needed!**\n\n"
-                "Two or more tasks are scheduled at the same time. Your pet can't be in two places at once. "
-                "Edit a task's time so each slot is unique.",
+                "Two or more unfinished tasks share a scheduled start time. "
+                "Check the care plan before doing these tasks.",
                 icon="🚨",
             )
             with st.expander(f"See {len(conflicts)} conflict detail{'s' if len(conflicts) > 1 else ''}"):

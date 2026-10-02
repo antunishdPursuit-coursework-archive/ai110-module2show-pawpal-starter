@@ -65,27 +65,35 @@ class Task:
     def status(self) -> str:
         """Derive task status from completion and schedule: done, overdue, or pending."""
         today = date.today()
-        if self.last_completed_date == today:
-            return "done"
+        if self.last_completed_date is not None:
+            # Daily/weekly tasks are individual occurrences; keep completed history.
+            if not self.schedule or self.schedule.schedule_type != ScheduleType.CUSTOM:
+                return "done"
+            if self.last_completed_date == today:
+                return "done"
         if self.schedule and self.schedule.next_due_date < today:
             return "overdue"
         return "pending"
 
-    def mark_complete(self):
-        """Mark the task complete for today and advance its schedule."""
-        today = date.today()
-        if self.last_completed_date == today:
-            print(f"Task '{self.title}' already marked complete today — skipping.")
-            return
-        self.last_completed_date = today
-        if self.schedule:
-            self.schedule.calculate_next_due_date()
+    def mark_complete(self) -> bool:
+        """Complete this occurrence once; custom routines advance in place.
+
+        Return False when already done. Daily/weekly occurrences keep their
+        original due date; Scheduler creates a separate next occurrence.
+        """
+        if self.status == "done":
+            return False
+        self.last_completed_date = date.today()
+        if self.schedule and self.schedule.schedule_type == ScheduleType.CUSTOM:
+            self.schedule.next_due_date = date.today() + timedelta(days=self.schedule.interval)
+        return True
 
     def next_occurrence(self) -> Optional["Task"]:
         """Return a new Task instance for the next recurrence, or None if not recurring."""
         if not self.schedule:
             return None
-        next_start = date.today() + timedelta(days=self.schedule.interval)
+        completed_on = self.last_completed_date or date.today()
+        next_start = completed_on + timedelta(days=self.schedule.interval)
         new_schedule = Schedule(
             schedule_type=self.schedule.schedule_type,
             start_date=next_start,
@@ -157,12 +165,10 @@ class Pet:
 
     def get_due_tasks_today(self) -> list[Task]:
         """Return tasks due today, excluding already-completed ones, sorted by time_of_day."""
-        today = date.today()
         due = [
             t for t in self.tasks
-            if t.schedule
-            and t.schedule.is_due_today()
-            and t.last_completed_date != today
+            if t.status != "done"
+            and (t.schedule is None or t.schedule.is_due_today())
         ]
         return sorted(due, key=lambda t: (t.time_of_day is None, t.time_of_day))
 
@@ -204,14 +210,19 @@ class Owner:
             return pet.get_tasks_by_status(status)
         return pet.get_tasks()
 
+    def get_all_tasks(self) -> list[Task]:
+        """Return every pet's tasks in a new list, including completed history."""
+        return [task for pet in self.pets for task in pet.get_tasks()]
+
     def view_daily_plan(self):
         """Print a formatted daily schedule for all pets owned by this owner."""
         print(f"\n=== Daily Plan for {self.name} ===")
         if not self.pets:
             print("No pets registered.")
             return
+        daily_tasks = Scheduler.get_daily_tasks(self)
         for pet in self.pets:
-            due = pet.get_due_tasks_today()
+            due = [task for task in daily_tasks if task.assigned_pet_id == pet.pet_id]
             print(f"\n{pet.name} ({pet.species}, age {pet.age}):")
             if not due:
                 print("  No tasks due today.")
@@ -223,7 +234,24 @@ class Owner:
 
 
 class Scheduler:
-    """Utility class for sorting and filtering task lists across any pets."""
+    """Read an owner's tasks and apply scheduling rules across their pets."""
+
+    @staticmethod
+    def get_daily_tasks(owner: Owner, include_completed: bool = False) -> list[Task]:
+        """Read Owner.get_all_tasks(); return due tasks and optionally today's completions.
+
+        Unscheduled tasks are available today. Future occurrences and older
+        completed history stay outside the daily view.
+        """
+        today = date.today()
+        daily_tasks = []
+        for task in owner.get_all_tasks():
+            if task.status == "done":
+                if include_completed and task.last_completed_date == today:
+                    daily_tasks.append(task)
+            elif task.schedule is None or task.schedule.is_due_today():
+                daily_tasks.append(task)
+        return Scheduler.sort_by_time(daily_tasks)
 
     @staticmethod
     def sort_by_time(tasks: list[Task]) -> list[Task]:
@@ -234,9 +262,15 @@ class Scheduler:
     def complete_and_reschedule(task: Task, pet: "Pet") -> Optional[Task]:
         """Mark a task complete and auto-create the next occurrence for daily/weekly tasks.
 
-        Returns the new Task if one was created, or None for one-off tasks.
+        Returns the new Task, or None for custom/one-off/already-done tasks.
+        A task must belong to the supplied pet before it can be completed.
         """
-        task.mark_complete()
+        if task.assigned_pet_id != pet.pet_id or not any(
+            existing is task for existing in pet.tasks
+        ):
+            raise ValueError("Task must belong to the supplied pet")
+        if not task.mark_complete():
+            return None
         if task.schedule and task.schedule.schedule_type in (ScheduleType.DAILY, ScheduleType.WEEKLY):
             new_task = task.next_occurrence()
             pet.add_task(new_task)
@@ -313,10 +347,10 @@ if __name__ == "__main__":
     owner.view_daily_plan()
 
     print("\n--- Marking Buddy's feed as complete ---")
-    feed_dog.mark_complete()
-    print(f"Next feed due: {feed_dog.schedule.next_due_date}")
+    next_feed = Scheduler.complete_and_reschedule(feed_dog, dog)
+    print(f"Next feed due: {next_feed.schedule.next_due_date}")
 
     print("\n--- Attempting to mark complete again today ---")
-    feed_dog.mark_complete()
+    Scheduler.complete_and_reschedule(feed_dog, dog)
 
     owner.view_daily_plan()
