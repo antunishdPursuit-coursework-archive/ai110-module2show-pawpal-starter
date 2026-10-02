@@ -67,7 +67,7 @@ is_due_today() uses <= instead of ==	Catches overdue/missed tasks — a task due
 Task
 
 Change	Reason
-mark_complete() implemented	Now sets last_completed_date and calls schedule.calculate_next_due_date() only if a schedule exists
+mark_complete() implemented	Sets last_completed_date once for daily/weekly occurrences; custom routines advance in place. Scheduler creates the next daily/weekly occurrence.
 update_task() given parameters	Added title and description as optional kwargs — previously had no way to actually update anything
 Pet
 
@@ -81,7 +81,7 @@ Change	Reason
 add_pet() implemented	Appends to self.pets
 remove_pet(pet_id) added	Symmetric with add_pet; matches by pet_id
 find_pet(pet_id) added	Resolves the Task → Pet navigation gap — given a task.assigned_pet_id, you can now look up the pet
-view_daily_plan() implemented	Returns a dict of {pet_name: [due_tasks]} — structured and easy to display or iterate
+view_daily_plan() implemented	Prints a daily plan by pet; reads the daily task list through Scheduler.
 ---
 
 ## 2. Scheduling Logic and Tradeoffs
@@ -148,4 +148,51 @@ I want to make the UI look even better. I was looking up more desgins online but
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
-AI is not going to do everything for me. I still need to prompt and nudge it to work more smoothly and I'm hoping to improve this skill for the next project. Also, AI can already do a lot of things I haven't thought of before so I'm interested in doing more and also exploring more the capabilities of AI. 
+AI is not going to do everything for me. I still need to prompt and nudge it to work more smoothly and I'm hoping to improve this skill for the next project. Also, AI can already do a lot of things I haven't thought of before so I'm interested in doing more and also exploring more the capabilities of AI.
+
+## October 2, 2026 implementation update
+
+The original reflection above records the earlier project. This section records
+the current code changes and verification without replacing those personal
+observations.
+
+### Design and scheduling
+
+`Owner.get_all_tasks()` now collects tasks from every pet. Scheduler reads that
+method to build the daily view; the CLI and app use it rather than collecting
+from individual pets themselves.
+
+Daily and weekly tasks represent individual occurrences. Completing one keeps
+it in history as done and creates exactly one future occurrence, due one or
+seven days after completion. A second completion is ignored. Custom routines
+reuse the same task and advance from completion date by the custom interval.
+This preserves the earlier custom behavior without creating duplicate
+independent daily/weekly schedules.
+
+The daily view can include today's completed work, so the done filter and
+Done today count can display it. Older completed occurrences remain in the
+owner's full task list. Conflict warnings consider unfinished work only.
+
+The scheduling tradeoff is simple and explicit: sort by scheduled start time,
+then warn about equal start times rather than choosing another slot. There is
+no duration-based overlap detection or priority optimization. This fits the
+current Show walkthrough but is narrower than the starter's broad scenario.
+
+### AI choices and verification
+
+The approved update added the missing Owner-to-Scheduler path and aligned the
+code, diagram, and documentation. The initial proposal included more saved
+tests; Dennis directed that no new tests be added. The existing six tests were
+used unchanged. Additional checks ran in memory without creating test files.
+
+All six existing tests passed. The CLI demonstrated both pets, sorting,
+conflicts, daily/weekly recurrence, and visible completed tasks. In-memory
+checks confirmed that repeated completion adds no duplicate future task and
+that a completed daily occurrence remains done the next day. The Streamlit app
+runner reported no exceptions for setup, adding a pet/task, completion, the
+done filter, or setting the owner name again. README contains the actual CLI
+and pytest output, method map, and written walkthrough.
+
+These results support the demonstrated workflow. They do not establish durable
+storage, browser visual acceptance, or all possible inputs. No new saved test
+suite, optional stretch feature, or student submission is claimed.

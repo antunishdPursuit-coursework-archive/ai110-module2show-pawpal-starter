@@ -1,115 +1,198 @@
-# PawPal+ (Module 2 Project)
+# PawPal+ — Module 2 Project
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+PawPal+ is a Python and Streamlit pet-care planner. An owner can register pets,
+add care tasks, and view today's schedule across all pets. The scheduler sorts
+by time, filters by pet or status, warns about matching start times, and creates
+the next daily or weekly task after completion.
 
-## Scenario
+## Setup and run
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+From the repository folder in PowerShell:
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
-
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
-
-## What you will build
-
-Your final app should:
-
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
-
-## Getting started
-
-### Setup
-
-```bash
+```powershell
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python main.py
+python -m streamlit run app.py
 ```
 
-### Suggested workflow
+Stop Streamlit with Ctrl+C. Data lives in `st.session_state`: it survives normal
+app reruns, but is not saved to a database or guaranteed across browser sessions.
+Setting the owner's name again preserves the registered pets and tasks.
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+## System design
 
+- `Owner` owns zero or more pets. `get_all_tasks()` returns all their tasks,
+  including completed history, in a new list.
+- `Pet` stores its task occurrences and checks pet assignment when adding one.
+- `Task` stores the title, description, assigned pet, optional time and schedule,
+  and completion date. Its status is `pending`, `overdue`, or `done`.
+- `Schedule` represents daily, weekly, or custom intervals in days.
+- `Scheduler.get_daily_tasks(owner)` reads `Owner.get_all_tasks()` and applies
+  the daily-view rules. Both the CLI and Streamlit app use this path.
 
-### Testing PawPal+
+See [the class diagram](class_diagram.md) and its
+[Mermaid source](diagrams/uml_final.mmd).
 
-```bash
+## Smarter Scheduling
+
+| Feature | Method | Behavior |
+| --- | --- | --- |
+| Owner-wide daily plan | `Scheduler.get_daily_tasks` | Collects all pets' tasks through Owner; includes due/overdue tasks and optionally today's completions. Future tasks and old completed history stay outside today's view. |
+| Sorting | `Scheduler.sort_by_time` | Sorts native time values earliest first; untimed tasks come last. |
+| Filtering | `Scheduler.filter_tasks` | Combines status and pet-name filters. Completed tasks remain available to the UI's done filter. |
+| Recurrence | `Scheduler.complete_and_reschedule` | A completed daily/weekly occurrence stays done and creates one new task due one/seven days after completion. Repeating completion adds nothing. |
+| Custom intervals | `Task.mark_complete` | Advances the same custom task to completion date plus its interval; it is done today and becomes pending/overdue again when appropriate. |
+| Conflicts | `Scheduler.detect_conflicts` | Groups unfinished tasks at the exact same start time, within or across pets. Tasks without a time do not generate a warning. |
+
+Unscheduled tasks are available today. A conflict is a warning, not an automatic
+reschedule. The app excludes completed work from conflict warnings and shows
+Pending, Overdue, and Done today counts.
+
+## Sample Output
+
+Actual output from `python -B main.py` on October 2, 2026. Dates change when run
+on another day. The demo uses Jordan, Rex, Luna, and seven out-of-order tasks.
+
+```text
+=============================================
+  CONFLICT REPORT
+=============================================
+  WARNING: CONFLICT at 08:00 AM: 'Bath Time' (Rex) vs 'Morning Feed' (Luna)
+  WARNING: CONFLICT at 10:00 AM: 'Grooming' (Luna) vs 'Medicine' (Luna)
+
+=============================================
+  TODAY'S SCHEDULE (sorted) — 2026-10-02
+  Owner: Jordan
+=============================================
+  [PENDING] 07:00 AM  Morning Feed
+            1 cup of dry food
+  [PENDING] 08:00 AM  Bath Time
+            Quick rinse after walk
+  [PENDING] 08:00 AM  Morning Feed
+            Half can of wet food
+  [PENDING] 10:00 AM  Grooming
+            Brush coat for 5 minutes
+  [PENDING] 10:00 AM  Medicine
+            Flea prevention drops
+  [PENDING] 02:00 PM  Vet Checkup
+            Annual vaccination
+  [PENDING] 06:00 PM  Walk
+            Evening walk, 20 minutes
+
+--- Completing Rex's Morning Feed (DAILY) ---
+
+--- Completing Rex's Walk (CUSTOM — no new instance expected) ---
+
+--- Completing Luna's Grooming (WEEKLY) ---
+
+Rex's full task list after reschedule:
+  Walk | due: 2026-10-04 | status: done
+  Morning Feed | due: 2026-10-02 | status: done
+  Vet Checkup | due: 2026-10-02 | status: pending
+  Bath Time | due: 2026-10-02 | status: pending
+  Morning Feed | due: 2026-10-03 | status: pending
+
+Luna's full task list after reschedule:
+  Grooming | due: 2026-10-02 | status: done
+  Morning Feed | due: 2026-10-02 | status: pending
+  Medicine | due: 2026-10-02 | status: pending
+  Grooming | due: 2026-10-09 | status: pending
+
+Today's pending tasks (any pet):
+  08:00:00  Bath Time [pending]
+  08:00:00  Morning Feed [pending]
+  10:00:00  Medicine [pending]
+  14:00:00  Vet Checkup [pending]
+
+Today's done tasks (any pet):
+  07:00:00  Morning Feed [done]
+  10:00:00  Grooming [done]
+  18:00:00  Walk [done]
+
+Only Luna's tasks today:
+  08:00 AM  Morning Feed [pending]
+  10:00 AM  Grooming [done]
+  10:00 AM  Medicine [pending]
+
+Only Rex's pending tasks today:
+  08:00 AM  Bath Time [pending]
+  02:00 PM  Vet Checkup [pending]
+
+=============================================
+```
+
+## Testing PawPal+
+
+The six existing tests in `tests/test_pawpal.py` cover completion dates, task
+addition, chronological sorting with untimed tasks last, next-day recurrence,
+and positive/negative exact-time conflicts. No tests were added or changed for
+this update.
+
+```powershell
 python -m pytest
 ```
 
-Sorting:
-Passes tasks in wrong order (noon, no-time, morning) to prove the sort is actually doing work, not just returning input order.
-Checks all three positions so a partial sort can't accidentally pass.
+Verification used Python 3.14.5, pytest 9.1.0, and Streamlit 1.58.0. To avoid
+unrelated global pytest plugins and generated bytecode/cache files, the actual
+local command was:
 
-Recurrence:
-test_complete_and_reschedule_creates_next_day_task
-Verifies three things at once: the original task is marked done, the pet now has 2 tasks, and the new task's next_due_date is exactly tomorrow.
+```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+python -B -m pytest -p no:cacheprovider -q
+```
 
-Conflict Detection:
-The positive case (test_detect_conflicts_flags_same_time_tasks) checks that a warning exists and that the string contains "08:00 AM" — so it's not just checking for any warning, but the right one.
-The negative case (test_detect_conflicts_no_warnings_for_different_times) ensures the function doesn't fire false positives.
+Actual result on October 2, 2026:
 
-### "Confidence Level" 
-3/5 Stars
+```text
+......                                                                   [100%]
+6 passed in 0.02s
+```
 
----
+Additional temporary, in-memory checks covered Owner-to-Scheduler retrieval,
+cross-pet conflicts, daily/weekly dates, repeated completion, next-day behavior,
+and an empty owner. Streamlit's in-memory app runner checked owner setup,
+adding a pet and task, completion, the done filter, and updating the owner name.
+It reported no app exceptions; completion changed Done today from 0 to 1 and
+left one future occurrence. These checks created no test files.
 
-## Features
+Confidence: **4/5 for the demonstrated local workflow**. The six saved tests
+cover only the behaviors listed above. The additional checks are not a saved
+regression suite. No browser visual review, durable storage, or duration-based
+overlap checking is claimed.
 
-### Owner & Pet Management
+## Demo Walkthrough
 
-- Create a named owner and register multiple pets (name, species, age)
-- Pets are stored in session state so they persist across Streamlit reruns
+1. Run `python main.py` to see the owner-wide schedule, two conflict warnings,
+   daily/weekly recurrence, completed tasks, and pet/status filtering. Its
+   actual output appears under Sample Output above.
+2. Run `python -m streamlit run app.py`. Enter an owner name and select
+   **Set Owner**. Add two pets with **Add Pet**.
+3. Assign a task to each pet. Choose Daily, Weekly, or Custom, optionally set
+   a time, then select **Add Task**. Add tasks out of chronological order to
+   see the scheduler sort them.
+4. Give two unfinished tasks the same start time. Read the named conflict
+   warnings. Untimed tasks sort last and do not produce a conflict.
+5. Select **Mark done** on a daily task. The completed task remains visible,
+   Done today increases, and one next occurrence is due tomorrow. A weekly
+   task's next occurrence is due seven days later.
+6. Select **done** in **Filter by status**, then filter by pet. Change the
+   owner's name with **Set Owner**; the pets and tasks remain in the session.
 
-### Task Scheduling
+The existing [pet_app.PNG](pet_app.PNG) is a historical screenshot, not evidence
+of this update's UI verification.
 
-- Add care tasks (walks, feeding, meds, grooming, etc.) to any registered pet
-- Choose a **schedule type**: Daily (every day), Weekly (every 7 days), or Custom (any interval in days)
-- Optionally set a **time of day** for each task so the daily view can order them chronologically
+## Course sources and scope
 
-### Sorting by Time (`Scheduler.sort_by_time`)
+- [Current Week 4 Show: PawPal+](https://courses.codepath.org/courses/ai110/unit/4#!projects)
+- [Official starter](https://github.com/codepath/ai110-module2show-pawpal-starter)
+- [Project reflection](reflection.md)
 
-- Tasks are sorted ascending by `time_of_day` before display
-- Tasks with no time set sort to the bottom ("Anytime") so timed tasks always appear first
-
-### Conflict Detection (`Scheduler.detect_conflicts`)
-
-- Scans all tasks due today for overlapping `time_of_day` values
-- Any two tasks sharing the exact same time slot trigger a named warning: which tasks conflict and at what time
-- Conflicts are surfaced as a prominent error banner in the UI with a drill-down expander listing each conflict
-
-### Status Filtering (`Scheduler.filter_tasks`)
-
-- Filter today's tasks by status (`pending`, `done`, `overdue`) and/or by pet name in a single pass
-- Combines both filters together so results match both criteria simultaneously
-
-### Daily Recurrence (`Scheduler.complete_and_reschedule`)
-
-- Marking a task done calls `mark_complete()`, which records today's date and advances `schedule.next_due_date` by the task's interval
-- For Daily and Weekly tasks, a new `Task` instance is automatically created for the next occurrence and added to the pet
-- Custom-interval tasks are advanced but do not auto-create a new instance
-
-### Status Derivation (`Task.status` property)
-
-- Status is computed at read time — no stored state to go stale
-- `done` if `last_completed_date` is today; `overdue` if `next_due_date` is in the past; `pending` otherwise
-
-### UI Summary Metrics
-
-- Displays a live count of **Pending / Overdue / Done** tasks at the top of the daily schedule
-- Overdue count is highlighted in red using Streamlit's `delta_color="inverse"` to prompt action
-
-### Demo
-<a href="pet_app.PNG" target="_blank"><img src='pet_app.PNG' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+The current Show walkthrough specifies time/frequency scheduling, an
+Owner-to-Scheduler data path, sorting, filtering, recurrence, conflicts,
+verification, and the final diagram. The starter's broad scenario also mentions
+duration, priority, editing, and constraint-based planning. This implementation
+follows the detailed Show workflow: it does not implement duration/priority
+optimization or a task-editing UI. Exact start-time warnings do not measure
+interval overlap. Optional stretch features are outside this update.
